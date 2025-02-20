@@ -60,6 +60,16 @@ func TestRewrite(t *testing.T) {
 			expect: newRequest(t, "GET", "foo"),
 		},
 		{
+			rule:   Rewrite{URI: "{http.request.uri}"},
+			input:  newRequest(t, "GET", "/bar%3Fbaz?c=d"),
+			expect: newRequest(t, "GET", "/bar%3Fbaz?c=d"),
+		},
+		{
+			rule:   Rewrite{URI: "{http.request.uri.path}"},
+			input:  newRequest(t, "GET", "/bar%3Fbaz"),
+			expect: newRequest(t, "GET", "/bar%3Fbaz"),
+		},
+		{
 			rule:   Rewrite{URI: "/foo{http.request.uri.path}"},
 			input:  newRequest(t, "GET", "/bar"),
 			expect: newRequest(t, "GET", "/foo/bar"),
@@ -189,6 +199,31 @@ func TestRewrite(t *testing.T) {
 			input:  newRequest(t, "GET", "/foo/?a=b"),
 			expect: newRequest(t, "GET", "/foo/bar?c=d"),
 		},
+		{
+			rule:   Rewrite{URI: "/i{http.request.uri}"},
+			input:  newRequest(t, "GET", "/%C2%B7%E2%88%B5.png"),
+			expect: newRequest(t, "GET", "/i/%C2%B7%E2%88%B5.png"),
+		},
+		{
+			rule:   Rewrite{URI: "/i{http.request.uri}"},
+			input:  newRequest(t, "GET", "/·∵.png?a=b"),
+			expect: newRequest(t, "GET", "/i/%C2%B7%E2%88%B5.png?a=b"),
+		},
+		{
+			rule:   Rewrite{URI: "/i{http.request.uri}"},
+			input:  newRequest(t, "GET", "/%C2%B7%E2%88%B5.png?a=b"),
+			expect: newRequest(t, "GET", "/i/%C2%B7%E2%88%B5.png?a=b"),
+		},
+		{
+			rule:   Rewrite{URI: "/bar#?"},
+			input:  newRequest(t, "GET", "/foo#fragFirst?c=d"), // not a valid query string (is part of fragment)
+			expect: newRequest(t, "GET", "/bar#?"),             // I think this is right? but who knows; std lib drops fragment when parsing
+		},
+		{
+			rule:   Rewrite{URI: "/bar"},
+			input:  newRequest(t, "GET", "/foo#fragFirst?c=d"),
+			expect: newRequest(t, "GET", "/bar#fragFirst?c=d"),
+		},
 
 		{
 			rule:   Rewrite{StripPathPrefix: "/prefix"},
@@ -201,6 +236,21 @@ func TestRewrite(t *testing.T) {
 			expect: newRequest(t, "GET", "/foo/bar"),
 		},
 		{
+			rule:   Rewrite{StripPathPrefix: "prefix"},
+			input:  newRequest(t, "GET", "/prefix/foo/bar"),
+			expect: newRequest(t, "GET", "/foo/bar"),
+		},
+		{
+			rule:   Rewrite{StripPathPrefix: "/prefix"},
+			input:  newRequest(t, "GET", "/prefix"),
+			expect: newRequest(t, "GET", ""),
+		},
+		{
+			rule:   Rewrite{StripPathPrefix: "/prefix"},
+			input:  newRequest(t, "GET", "/"),
+			expect: newRequest(t, "GET", "/"),
+		},
+		{
 			rule:   Rewrite{StripPathPrefix: "/prefix"},
 			input:  newRequest(t, "GET", "/prefix/foo%2Fbar"),
 			expect: newRequest(t, "GET", "/foo%2Fbar"),
@@ -209,6 +259,42 @@ func TestRewrite(t *testing.T) {
 			rule:   Rewrite{StripPathPrefix: "/prefix"},
 			input:  newRequest(t, "GET", "/foo/prefix/bar"),
 			expect: newRequest(t, "GET", "/foo/prefix/bar"),
+		},
+		{
+			rule: Rewrite{StripPathPrefix: "//prefix"},
+			// scheme and host needed for URL parser to succeed in setting up test
+			input:  newRequest(t, "GET", "http://host//prefix/foo/bar"),
+			expect: newRequest(t, "GET", "http://host/foo/bar"),
+		},
+		{
+			rule:   Rewrite{StripPathPrefix: "//prefix"},
+			input:  newRequest(t, "GET", "/prefix/foo/bar"),
+			expect: newRequest(t, "GET", "/prefix/foo/bar"),
+		},
+		{
+			rule:   Rewrite{StripPathPrefix: "/a%2Fb/c"},
+			input:  newRequest(t, "GET", "/a%2Fb/c/d"),
+			expect: newRequest(t, "GET", "/d"),
+		},
+		{
+			rule:   Rewrite{StripPathPrefix: "/a%2Fb/c"},
+			input:  newRequest(t, "GET", "/a%2fb/c/d"),
+			expect: newRequest(t, "GET", "/d"),
+		},
+		{
+			rule:   Rewrite{StripPathPrefix: "/a/b/c"},
+			input:  newRequest(t, "GET", "/a%2Fb/c/d"),
+			expect: newRequest(t, "GET", "/d"),
+		},
+		{
+			rule:   Rewrite{StripPathPrefix: "/a%2Fb/c"},
+			input:  newRequest(t, "GET", "/a/b/c/d"),
+			expect: newRequest(t, "GET", "/a/b/c/d"),
+		},
+		{
+			rule:   Rewrite{StripPathPrefix: "//a%2Fb/c"},
+			input:  newRequest(t, "GET", "/a/b/c/d"),
+			expect: newRequest(t, "GET", "/a/b/c/d"),
 		},
 
 		{
@@ -225,6 +311,11 @@ func TestRewrite(t *testing.T) {
 			rule:   Rewrite{StripPathSuffix: "suffix"},
 			input:  newRequest(t, "GET", "/foo%2Fbar/suffix"),
 			expect: newRequest(t, "GET", "/foo%2Fbar/"),
+		},
+		{
+			rule:   Rewrite{StripPathSuffix: "%2fsuffix"},
+			input:  newRequest(t, "GET", "/foo%2Fbar%2fsuffix"),
+			expect: newRequest(t, "GET", "/foo%2Fbar"),
 		},
 		{
 			rule:   Rewrite{StripPathSuffix: "/suffix"},
@@ -256,10 +347,11 @@ func TestRewrite(t *testing.T) {
 	} {
 		// copy the original input just enough so that we can
 		// compare it after the rewrite to see if it changed
+		urlCopy := *tc.input.URL
 		originalInput := &http.Request{
 			Method:     tc.input.Method,
 			RequestURI: tc.input.RequestURI,
-			URL:        &*tc.input.URL,
+			URL:        &urlCopy,
 		}
 
 		// populate the replacer just enough for our tests
@@ -277,7 +369,7 @@ func TestRewrite(t *testing.T) {
 			rep.re = re
 		}
 
-		changed := tc.rule.rewrite(tc.input, repl, nil)
+		changed := tc.rule.Rewrite(tc.input, repl)
 
 		if expected, actual := !reqEqual(originalInput, tc.input), changed; expected != actual {
 			t.Errorf("Test %d: Expected changed=%t but was %t", i, expected, actual)

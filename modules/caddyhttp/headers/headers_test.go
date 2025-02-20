@@ -82,6 +82,26 @@ func TestHandler(t *testing.T) {
 		{
 			handler: Handler{
 				Request: &HeaderOps{
+					Delete: []string{
+						"*-suffix",
+						"prefix-*",
+						"*_*",
+					},
+				},
+			},
+			reqHeader: http.Header{
+				"Header-Suffix": []string{"lalala"},
+				"Prefix-Test":   []string{"asdf"},
+				"Host_Header":   []string{"silly django... sigh"}, // see issue #4830
+				"Keep-Me":       []string{"foofoofoo"},
+			},
+			expectedReqHeader: http.Header{
+				"Keep-Me": []string{"foofoofoo"},
+			},
+		},
+		{
+			handler: Handler{
+				Request: &HeaderOps{
 					Replace: map[string][]Replacement{
 						"Best-Server": {
 							Replacement{
@@ -123,6 +143,28 @@ func TestHandler(t *testing.T) {
 				"Cache-Control": []string{"no-cache"},
 			},
 		},
+		{ // same as above, but checks that response headers are left alone when "Require" conditions are unmet
+			handler: Handler{
+				Response: &RespHeaderOps{
+					Require: &caddyhttp.ResponseMatcher{
+						Headers: http.Header{
+							"Cache-Control": nil,
+						},
+					},
+					HeaderOps: &HeaderOps{
+						Add: http.Header{
+							"Cache-Control": []string{"no-cache"},
+						},
+					},
+				},
+			},
+			respHeader: http.Header{
+				"Cache-Control": []string{"something"},
+			},
+			expectedRespHeader: http.Header{
+				"Cache-Control": []string{"something"},
+			},
+		},
 		{
 			handler: Handler{
 				Response: &RespHeaderOps{
@@ -160,6 +202,28 @@ func TestHandler(t *testing.T) {
 				"Fail-5xx": []string{"true"},
 			},
 		},
+		{
+			handler: Handler{
+				Request: &HeaderOps{
+					Replace: map[string][]Replacement{
+						"Case-Insensitive": {
+							Replacement{
+								Search:  "issue4330",
+								Replace: "issue #4330",
+							},
+						},
+					},
+				},
+			},
+			reqHeader: http.Header{
+				"case-insensitive": []string{"issue4330"},
+				"Other-Header":     []string{"issue4330"},
+			},
+			expectedReqHeader: http.Header{
+				"case-insensitive": []string{"issue #4330"},
+				"Other-Header":     []string{"issue4330"},
+			},
+		},
 	} {
 		rr := httptest.NewRecorder()
 
@@ -191,7 +255,7 @@ func TestHandler(t *testing.T) {
 		})
 
 		if err := tc.handler.ServeHTTP(rr, req, next); err != nil {
-			t.Errorf("Test %d: %w", i, err)
+			t.Errorf("Test %d: %v", i, err)
 			continue
 		}
 

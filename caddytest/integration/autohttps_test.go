@@ -11,6 +11,8 @@ func TestAutoHTTPtoHTTPSRedirectsImplicitPort(t *testing.T) {
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`
 	{
+		admin localhost:2999
+		skip_install_trust
 		http_port     9080
 		https_port    9443
 	}
@@ -25,6 +27,8 @@ func TestAutoHTTPtoHTTPSRedirectsExplicitPortSameAsHTTPSPort(t *testing.T) {
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`
 	{
+		skip_install_trust
+		admin localhost:2999
 		http_port     9080
 		https_port    9443
 	}
@@ -39,6 +43,8 @@ func TestAutoHTTPtoHTTPSRedirectsExplicitPortDifferentFromHTTPSPort(t *testing.T
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`
 	{
+		skip_install_trust
+		admin localhost:2999
 		http_port     9080
 		https_port    9443
 	}
@@ -53,6 +59,9 @@ func TestAutoHTTPRedirectsWithHTTPListenerFirstInAddresses(t *testing.T) {
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`
 {
+  "admin": {
+	"listen": "localhost:2999"
+  },
   "apps": {
     "http": {
       "http_port": 9080,
@@ -74,7 +83,14 @@ func TestAutoHTTPRedirectsWithHTTPListenerFirstInAddresses(t *testing.T) {
           ]
         }
       }
-    }
+    },
+	"pki": {
+		"certificate_authorities": {
+			"local": {
+				"install_trust": false
+			}
+		}
+	}
   }
 }
 `, "json")
@@ -85,6 +101,8 @@ func TestAutoHTTPRedirectsInsertedBeforeUserDefinedCatchAll(t *testing.T) {
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`
 	{
+		skip_install_trust
+		admin localhost:2999
 		http_port     9080
 		https_port    9443
 		local_certs
@@ -102,4 +120,26 @@ func TestAutoHTTPRedirectsInsertedBeforeUserDefinedCatchAll(t *testing.T) {
 	tester.AssertRedirect("http://bar.localhost:9080/", "https://bar.localhost/", http.StatusPermanentRedirect)
 	tester.AssertGetResponse("http://foo.localhost:9080/", 200, "Foo")
 	tester.AssertGetResponse("http://baz.localhost:9080/", 200, "Baz")
+}
+
+func TestAutoHTTPRedirectsInsertedBeforeUserDefinedCatchAllWithNoExplicitHTTPSite(t *testing.T) {
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`
+	{
+		skip_install_trust
+		admin localhost:2999
+		http_port     9080
+		https_port    9443
+		local_certs
+	}
+	http://:9080 {
+		respond "Foo"
+	}
+	bar.localhost {
+		respond "Bar"
+	}
+  `, "caddyfile")
+	tester.AssertRedirect("http://bar.localhost:9080/", "https://bar.localhost/", http.StatusPermanentRedirect)
+	tester.AssertGetResponse("http://foo.localhost:9080/", 200, "Foo")
+	tester.AssertGetResponse("http://baz.localhost:9080/", 200, "Foo")
 }

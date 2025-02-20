@@ -180,6 +180,11 @@ d {
 }`,
 		},
 		{
+			description: "env var placeholders with port",
+			input:       `:{$PORT}`,
+			expect:      `:{$PORT}`,
+		},
+		{
 			description: "comments",
 			input: `#a "\n"
 
@@ -320,6 +325,114 @@ baz`,
 {
 	foo
 }`,
+		},
+		{
+			description: "matthewpi/vscode-caddyfile-support#13",
+			input: `{
+	email {$ACMEEMAIL}
+	#debug
+}
+
+block {
+}
+`,
+			expect: `{
+	email {$ACMEEMAIL}
+	#debug
+}
+
+block {
+}
+`,
+		},
+		{
+			description: "matthewpi/vscode-caddyfile-support#13 - bad formatting",
+			input: `{
+	email {$ACMEEMAIL}
+	#debug
+	}
+
+	block {
+	}
+`,
+			expect: `{
+	email {$ACMEEMAIL}
+	#debug
+}
+
+block {
+}
+`,
+		},
+		{
+			description: "keep heredoc as-is",
+			input: `block {
+	heredoc <<HEREDOC
+	Here's more than one space       Here's more than one space
+	HEREDOC
+}
+`,
+			expect: `block {
+	heredoc <<HEREDOC
+	Here's more than one space       Here's more than one space
+	HEREDOC
+}
+`,
+		},
+		{
+			description: "Mixing heredoc with regular part",
+			input: `block {
+	heredoc <<HEREDOC
+	Here's more than one space       Here's more than one space
+	HEREDOC
+	respond "More than one space will be eaten"     200
+}
+
+block2 {
+	heredoc <<HEREDOC
+	Here's more than one space       Here's more than one space
+	HEREDOC
+	respond "More than one space will be eaten" 200
+}
+`,
+			expect: `block {
+	heredoc <<HEREDOC
+	Here's more than one space       Here's more than one space
+	HEREDOC
+	respond "More than one space will be eaten" 200
+}
+
+block2 {
+	heredoc <<HEREDOC
+	Here's more than one space       Here's more than one space
+	HEREDOC
+	respond "More than one space will be eaten" 200
+}
+`,
+		},
+		{
+			description: "Heredoc as regular token",
+			input: `block {
+	heredoc <<HEREDOC                                 "More than one space will be eaten"
+}
+`,
+			expect: `block {
+	heredoc <<HEREDOC "More than one space will be eaten"
+}
+`,
+		},
+		{
+			description: "Escape heredoc",
+			input: `block {
+	heredoc \<<HEREDOC
+	respond "More than one space will be eaten"                           200
+}
+`,
+			expect: `block {
+	heredoc \<<HEREDOC
+	respond "More than one space will be eaten" 200
+}
+`,
 		},
 	} {
 		// the formatter should output a trailing newline,

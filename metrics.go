@@ -2,37 +2,47 @@ package caddy
 
 import (
 	"net/http"
-	"strconv"
-	"strings"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
+
+	"github.com/caddyserver/caddy/v2/internal/metrics"
 )
 
 // define and register the metrics used in this package.
 func init() {
-	prometheus.MustRegister(prometheus.NewBuildInfoCollector())
-
 	const ns, sub = "caddy", "admin"
-
-	adminMetrics.requestCount = promauto.NewCounterVec(prometheus.CounterOpts{
+	adminMetrics.requestCount = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace: ns,
 		Subsystem: sub,
 		Name:      "http_requests_total",
 		Help:      "Counter of requests made to the Admin API's HTTP endpoints.",
 	}, []string{"handler", "path", "code", "method"})
-	adminMetrics.requestErrors = promauto.NewCounterVec(prometheus.CounterOpts{
+	adminMetrics.requestErrors = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace: ns,
 		Subsystem: sub,
 		Name:      "http_request_errors_total",
 		Help:      "Number of requests resulting in middleware errors.",
 	}, []string{"handler", "path", "method"})
+	globalMetrics.configSuccess = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "caddy_config_last_reload_successful",
+		Help: "Whether the last configuration reload attempt was successful.",
+	})
+	globalMetrics.configSuccessTime = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "caddy_config_last_reload_success_timestamp_seconds",
+		Help: "Timestamp of the last successful configuration reload.",
+	})
 }
 
 // adminMetrics is a collection of metrics that can be tracked for the admin API.
 var adminMetrics = struct {
 	requestCount  *prometheus.CounterVec
 	requestErrors *prometheus.CounterVec
+}{}
+
+// globalMetrics is a collection of metrics that can be tracked for Caddy global state
+var globalMetrics = struct {
+	configSuccess     prometheus.Gauge
+	configSuccessTime prometheus.Gauge
 }{}
 
 // Similar to promhttp.InstrumentHandlerCounter, but upper-cases method names
@@ -45,8 +55,8 @@ func instrumentHandlerCounter(counter *prometheus.CounterVec, next http.Handler)
 		d := newDelegator(w)
 		next.ServeHTTP(d, r)
 		counter.With(prometheus.Labels{
-			"code":   sanitizeCode(d.status),
-			"method": strings.ToUpper(r.Method),
+			"code":   metrics.SanitizeCode(d.status),
+			"method": metrics.SanitizeMethod(r.Method),
 		}).Inc()
 	})
 }
@@ -67,11 +77,8 @@ func (d *delegator) WriteHeader(code int) {
 	d.ResponseWriter.WriteHeader(code)
 }
 
-func sanitizeCode(s int) string {
-	switch s {
-	case 0, 200:
-		return "200"
-	default:
-		return strconv.Itoa(s)
-	}
+// Unwrap returns the underlying ResponseWriter, necessary for
+// http.ResponseController to work correctly.
+func (d *delegator) Unwrap() http.ResponseWriter {
+	return d.ResponseWriter
 }
